@@ -87,7 +87,7 @@ trans_setting = {
 # user config file
 # use scripts.basedir() to get current extension's folder
 config_file_name = os.path.join(scripts.basedir(), "prompt_translator.cfg")
-
+config_iam_token = os.path.join(scripts.basedir(), "yandex_token.cfg")
 
 # deepl translator
 # refer: https://www.deepl.com/docs-api/translate-text/
@@ -247,10 +247,10 @@ def baidu_trans(app_id, app_key, text):
 # return: translated_text
 def yandex_trans(folder_id, oauth_token, text):
     import datetime
-    config_iam_token = "yandex_token.cfg"
     iam_token_setting = {
         "IAM_TOKEN": "",
-        "expires_at": ""
+        "expires_at": "",
+        "sourceLanguageCode": "ru"
     }
     # запись в файл
     if not os.path.isfile(config_iam_token):
@@ -281,6 +281,8 @@ def yandex_trans(folder_id, oauth_token, text):
             return data.get("IAM_TOKEN")
         elif key == "expires_at":
             return data.get("expires_at")
+        elif key == "sourceLanguageCode":
+            return data.get("sourceLanguageCode")
         else:
             return None
 
@@ -322,6 +324,7 @@ def yandex_trans(folder_id, oauth_token, text):
         IAM_TOKEN = read_iam_token("IAM_TOKEN")
 
     body = {
+        "sourceLanguageCode": read_iam_token("sourceLanguageCode"),
         "targetLanguageCode": 'en',
         "texts": [
             text
