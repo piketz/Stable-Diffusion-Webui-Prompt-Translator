@@ -54,6 +54,10 @@ trans_providers = {
         "url":"https://translation.googleapis.com",
         "has_id": False
     },
+    "yandex": {
+        "url": "https://translate.api.cloud.yandex.net/translate/v2/translate",
+        "has_id": True
+    },
 }
 
 # user's translation service setting
@@ -70,6 +74,11 @@ trans_setting = {
     },
     "google": {
         "is_default":False,
+        "app_id": "",
+        "app_key": ""
+    },
+    "yandex": {
+        "is_default": True,
         "app_id": "",
         "app_key": ""
     },
@@ -232,6 +241,145 @@ def baidu_trans(app_id, app_key, text):
 
     return translated_text
 
+# yandex translator
+# refer: https://cloud.yandex.ru/docs/translate/operations/translate
+# parameter: folder_id, IAM_TOKEN, text
+# return: translated_text
+def yandex_trans(folder_id, oauth_token, text):
+    import datetime
+    config_iam_token = "yandex_token.cfg"
+    iam_token_setting = {
+        "IAM_TOKEN": "",
+        "expires_at": ""
+    }
+    # запись в файл
+    if not os.path.isfile(config_iam_token):
+        with open(config_iam_token, "w") as f:
+            json.dump(iam_token_setting, f)
+
+    def save_iam_token(IAM_TOKEN, expires_at):
+
+        with open(config_iam_token, "r") as f:
+            data = json.load(f)
+        data['IAM_TOKEN'] = IAM_TOKEN
+        data['expires_at'] = expires_at
+        with open(config_iam_token, "w") as f:
+            json.dump(data, f)
+
+    def read_iam_token(key):
+        try:
+            with open(config_iam_token, 'r') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            print(f"File {config_iam_token} not found")
+            return None
+        except json.JSONDecodeError:
+            print(f"Error decoding {config_iam_token} JSON")
+            return None
+
+        if key == "IAM_TOKEN":
+            return data.get("IAM_TOKEN")
+        elif key == "expires_at":
+            return data.get("expires_at")
+        else:
+            return None
+
+    def get_iam_token(oauth_token, gettime=''):     # get active token
+        url = 'https://iam.api.cloud.yandex.net/iam/v1/tokens'
+        headers = {"Content-Type": "application/json"}
+        data = {'yandexPassportOauthToken': oauth_token}
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 200:
+            new_token = response.json()['iamToken']
+            new_expiresAt = response.json()['expiresAt']
+            save_iam_token(new_token, new_expiresAt)
+        else:
+            print(f"Get Error code: {response.status_code}")
+            return None
+        if gettime:
+            return new_token, new_expiresAt
+        else:
+            return new_token
+
+    print("Getting data for yandex")
+
+    # check error
+    if not read_iam_token("IAM_TOKEN"):
+        get_iam_token(oauth_token)
+
+    if not folder_id:
+        return None
+
+    if read_iam_token("expires_at"):
+        expiration_date = datetime.datetime.fromisoformat(read_iam_token("expires_at")[:-7])
+    else:
+        IAM_TOKEN, new_expiresAt = get_iam_token(oauth_token, True)
+        expiration_date = datetime.datetime.fromisoformat(new_expiresAt[:-7])
+
+    if datetime.datetime.utcnow() > expiration_date:
+        IAM_TOKEN = get_iam_token(oauth_token)
+    else:
+        IAM_TOKEN = read_iam_token("IAM_TOKEN")
+
+    body = {
+        "targetLanguageCode": 'en',
+        "texts": [
+            text
+        ],
+        "folderId": folder_id,
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer {0}".format(IAM_TOKEN)
+    }
+    print("Sending request")
+    r = None
+    try:
+        r = requests.post(trans_providers["yandex"]["url"],
+                          json=body,
+                          headers=headers
+                          )
+    except Exception as e:
+        print("request get error, check your network")
+        print(str(e))
+        return None
+
+    print("checking response")
+    if r.status_code >= 300 or r.status_code < 200:
+        print("Get Error code: " + str(r.status_code))
+        if r.status_code == 429:
+            print("too many requests")
+        elif r.status_code == 456:
+            print("quota exceeded")
+        elif r.status_code >= 500:
+            print("temporary errors in the service")
+        return None
+
+    content = None
+    try:
+        content = r.json()
+
+    except Exception as e:
+        print("Parse response json failed")
+        print(str(e))
+        print("response:")
+        print(r.text)
+
+
+    translated_text = ""
+    if content:
+        if "translations" in content.keys():
+            if len(["translations"]):
+                if "text" in content["translations"][0].keys():
+                    translated_text = content["translations"][0]["text"]
+
+    if not translated_text:
+        print("can not read tralstated text from response:")
+        print(r.text)
+
+    return translated_text
+
 
 # do translation
 # parameter: provider, app_id, app_key, text
@@ -258,6 +406,8 @@ def do_trans(provider, app_id, app_key, text):
     elif provider == "google":
         service = GoogleTranslationService(app_key)
         translated_text = service.translate(text=text)
+    elif provider == "yandex":
+        translated_text = yandex_trans(app_id, app_key, text)
     else:
         print("can not find provider: ")
         print(provider)
@@ -375,7 +525,14 @@ def on_ui_tabs():
     # ====Event's function====
     def set_provider(provider):
         app_id_visible =  trans_providers[provider]['has_id']
-        return [app_id.update(visible=app_id_visible, value=trans_setting[provider]["app_id"]), app_key.update(value=trans_setting[provider]["app_key"])]
+        if provider == "yandex":
+            app_id_label = "FOLDER_ID"
+            app_key_label = "OAUTH_TOKEN"
+            app_id_visible = True
+        else:
+            app_id_label = "APP ID"
+            app_key_label = "APP KEY"
+        return [app_id.update(label=app_id_label, visible=app_id_visible, value=trans_setting[provider]["app_id"]), app_key.update(label=app_key_label, value=trans_setting[provider]["app_key"])]
 
 
     with gr.Blocks(analytics_enabled=False) as prompt_translator:
