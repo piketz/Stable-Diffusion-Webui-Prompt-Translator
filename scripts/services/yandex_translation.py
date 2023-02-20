@@ -80,6 +80,7 @@ def yandex_trans(folder_id, oauth_token, text):
     print("Getting data for yandex")
 
     read_yandex_conf()
+    sLangCode = iam_token_setting['sourceLanguageCode'].split(',')[0]
     # check error
     if not iam_token_setting['IAM_TOKEN']:
         get_iam_token(oauth_token)
@@ -99,7 +100,7 @@ def yandex_trans(folder_id, oauth_token, text):
         IAM_TOKEN = iam_token_setting['IAM_TOKEN']
 
     body = {
-        "sourceLanguageCode": iam_token_setting['sourceLanguageCode'].split(',')[0],
+        "sourceLanguageCode": sLangCode,
         "targetLanguageCode": 'en',
         "texts": [
             text
@@ -124,6 +125,7 @@ def yandex_trans(folder_id, oauth_token, text):
         return None
 
     print("checking response")
+    print(f"Use sourceLanguageCode: {sLangCode}")
     if r.status_code >= 300 or r.status_code < 200:
         print("Get Error code: " + str(r.status_code))
         if r.status_code == 429:

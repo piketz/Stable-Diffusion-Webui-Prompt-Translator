@@ -404,10 +404,16 @@ def on_ui_tabs():
         app_id_visible =  trans_providers[provider]['has_id']
         if provider == "yandex":
             s_lang_visible = True
+            app_id_label = "FOLDER_ID"
+            app_key_label = "OAUTH_TOKEN"
+            app_id_visible = True
         else:
             s_lang_visible = False
+            app_id_label = "APP ID"
+            app_key_label = "APP KEY"
+        app_id_visible =  trans_providers[provider]['has_id']
 
-        return [app_id.update(visible=app_id_visible, value=trans_setting[provider]["app_id"]), app_key.update(value=trans_setting[provider]["app_key"]),s_lang.update(visible=s_lang_visible, value=yandex_lang_list[0])]
+        return [app_id.update(visible=app_id_visible, label=app_id_label, value=trans_setting[provider]["app_id"]), app_key.update(label=app_key_label, value=trans_setting[provider]["app_key"]),s_lang.update(visible=s_lang_visible, value=yandex_lang_list[0])]
 
     with gr.Blocks(analytics_enabled=False) as prompt_translator:
         # ====ui====
@@ -470,13 +476,9 @@ def on_ui_tabs():
         send_prompt_btn.click(do_send_prompt, inputs=translated_prompt, outputs=[txt2img_prompt, img2img_prompt])
         send_neg_prompt_btn.click(do_send_prompt, inputs=translated_neg_prompt, outputs=[txt2img_neg_prompt, img2img_neg_prompt])
 
-        if provider_name == 'yandex':
-            outputs = [app_id, app_key, s_lang]
-        else:
-            outputs = [app_id, app_key]
 
         # Translation Service Setting
-        print(f'provider = {provider}')
+
         provider.change(fn=set_provider, inputs=provider, outputs=[app_id, app_key, s_lang])
         save_trans_setting_btn.click(save_trans_setting, inputs=[provider, app_id, app_key, s_lang])
 

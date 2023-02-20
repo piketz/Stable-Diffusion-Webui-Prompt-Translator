@@ -50,6 +50,22 @@ After you get your APP Key, fill it into this extension's tab page, then click s
 
 If you are in China, just choose [Baidu](http://api.fanyi.baidu.com/). 
 
+### Setup for Yandex translation API  [check](https://cloud.yandex.com/en/docs/translate/api-ref/authentication)
+**Note: The Yandex API issues a grant for new users and it is limited in time, and further translation is paid.**  
+
+![](./img/yandex_translation_01.png)
+![](./img/yandex_translation_02.png)
+
+1. Get an OAuth token from Yandex.OAuth.
+     - Click the [link]() If the application requests access to data, grant it. This is required to get a token.
+    
+2. Get [folder ID](https://cloud.yandex.com/en/docs/resource-manager/operations/folder/get-id)
+     - Select the folder on the management console [home page](https://console.cloud.yandex.com/cloud). This page displays information about all the folders in the selected cloud. If necessary, [switch to another cloud](https://cloud.yandex.com/en/docs/resource-manager/operations/cloud/switch-cloud).
+     - You can retrieve the folder ID from the folder page URL in the management console
+     `https://console.cloud.yandex.com/folders/b1gd129pp9ha0vnvf5g7`
+        Where **b1gd129pp9ha0vnvf5g7** is the folder ID.
+
+
 **Now, you have 2 ways to translate your prompt:**
 
 ## Use extension tab
