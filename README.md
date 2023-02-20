@@ -57,7 +57,7 @@ If you are in China, just choose [Baidu](http://api.fanyi.baidu.com/).
 ![](./img/yandex_translation_02.png)
 
 1. Get an OAuth token from Yandex.OAuth.
-     - Click the [link]() If the application requests access to data, grant it. This is required to get a token.
+     - Click the [link](https://oauth.yandex.com/authorize?response_type=token&client_id=1a6990aa636648e9b2ef855fa7bec2fb) If the application requests access to data, grant it. This is required to get a token.
     
 2. Get [folder ID](https://cloud.yandex.com/en/docs/resource-manager/operations/folder/get-id)
      - Select the folder on the management console [home page](https://console.cloud.yandex.com/cloud). This page displays information about all the folders in the selected cloud. If necessary, [switch to another cloud](https://cloud.yandex.com/en/docs/resource-manager/operations/cloud/switch-cloud).
