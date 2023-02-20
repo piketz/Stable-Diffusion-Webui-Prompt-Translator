@@ -31,13 +31,12 @@ import hashlib
 import json
 import modules
 from modules import script_callbacks
-from scripts.services import GoogleTranslationService
+from scripts.services import GoogleTranslationService, yandex_translation as yt
 
 # from modules import images
 # from modules.processing import process_images, Processed
 # from modules.processing import Processed
 # from modules.shared import opts, cmd_opts, state
-
 
 
 # Translation Service Providers
@@ -87,7 +86,6 @@ trans_setting = {
 # user config file
 # use scripts.basedir() to get current extension's folder
 config_file_name = os.path.join(scripts.basedir(), "prompt_translator.cfg")
-config_iam_token = os.path.join(scripts.basedir(), "yandex_token.cfg")
 
 # deepl translator
 # refer: https://www.deepl.com/docs-api/translate-text/
@@ -241,148 +239,6 @@ def baidu_trans(app_id, app_key, text):
 
     return translated_text
 
-# yandex translator
-# refer: https://cloud.yandex.ru/docs/translate/operations/translate
-# parameter: folder_id, IAM_TOKEN, text
-# return: translated_text
-def yandex_trans(folder_id, oauth_token, text):
-    import datetime
-    iam_token_setting = {
-        "IAM_TOKEN": "",
-        "expires_at": "",
-        "sourceLanguageCode": "ru"
-    }
-    # запись в файл
-    if not os.path.isfile(config_iam_token):
-        with open(config_iam_token, "w") as f:
-            json.dump(iam_token_setting, f)
-
-    def save_iam_token(IAM_TOKEN, expires_at):
-
-        with open(config_iam_token, "r") as f:
-            data = json.load(f)
-        data['IAM_TOKEN'] = IAM_TOKEN
-        data['expires_at'] = expires_at
-        with open(config_iam_token, "w") as f:
-            json.dump(data, f)
-
-    def read_iam_token(key):
-        try:
-            with open(config_iam_token, 'r') as f:
-                data = json.load(f)
-        except FileNotFoundError:
-            print(f"File {config_iam_token} not found")
-            return None
-        except json.JSONDecodeError:
-            print(f"Error decoding {config_iam_token} JSON")
-            return None
-
-        if key == "IAM_TOKEN":
-            return data.get("IAM_TOKEN")
-        elif key == "expires_at":
-            return data.get("expires_at")
-        elif key == "sourceLanguageCode":
-            return data.get("sourceLanguageCode")
-        else:
-            return None
-
-    def get_iam_token(oauth_token, gettime=''):     # get active token
-        url = 'https://iam.api.cloud.yandex.net/iam/v1/tokens'
-        headers = {"Content-Type": "application/json"}
-        data = {'yandexPassportOauthToken': oauth_token}
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 200:
-            new_token = response.json()['iamToken']
-            new_expiresAt = response.json()['expiresAt']
-            save_iam_token(new_token, new_expiresAt)
-        else:
-            print(f"Get Error code: {response.status_code}")
-            return None
-        if gettime:
-            return new_token, new_expiresAt
-        else:
-            return new_token
-
-    print("Getting data for yandex")
-
-    # check error
-    if not read_iam_token("IAM_TOKEN"):
-        get_iam_token(oauth_token)
-
-    if not folder_id:
-        return None
-
-    if read_iam_token("expires_at"):
-        expiration_date = datetime.datetime.fromisoformat(read_iam_token("expires_at")[:-7])
-    else:
-        IAM_TOKEN, new_expiresAt = get_iam_token(oauth_token, True)
-        expiration_date = datetime.datetime.fromisoformat(new_expiresAt[:-7])
-
-    if datetime.datetime.utcnow() > expiration_date:
-        IAM_TOKEN = get_iam_token(oauth_token)
-    else:
-        IAM_TOKEN = read_iam_token("IAM_TOKEN")
-
-    body = {
-        "sourceLanguageCode": read_iam_token("sourceLanguageCode"),
-        "targetLanguageCode": 'en',
-        "texts": [
-            text
-        ],
-        "folderId": folder_id,
-    }
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer {0}".format(IAM_TOKEN)
-    }
-    print("Sending request")
-    r = None
-    try:
-        r = requests.post(trans_providers["yandex"]["url"],
-                          json=body,
-                          headers=headers
-                          )
-    except Exception as e:
-        print("request get error, check your network")
-        print(str(e))
-        return None
-
-    print("checking response")
-    if r.status_code >= 300 or r.status_code < 200:
-        print("Get Error code: " + str(r.status_code))
-        if r.status_code == 429:
-            print("too many requests")
-        elif r.status_code == 456:
-            print("quota exceeded")
-        elif r.status_code >= 500:
-            print("temporary errors in the service")
-        return None
-
-    content = None
-    try:
-        content = r.json()
-
-    except Exception as e:
-        print("Parse response json failed")
-        print(str(e))
-        print("response:")
-        print(r.text)
-
-
-    translated_text = ""
-    if content:
-        if "translations" in content.keys():
-            if len(["translations"]):
-                if "text" in content["translations"][0].keys():
-                    translated_text = content["translations"][0]["text"]
-
-    if not translated_text:
-        print("can not read tralstated text from response:")
-        print(r.text)
-
-    return translated_text
-
 
 # do translation
 # parameter: provider, app_id, app_key, text
@@ -397,7 +253,7 @@ def do_trans(provider, app_id, app_key, text):
         print("can not find provider: ")
         print(provider)
         return ""
-    
+
     # translating
     translated_text = ""
     if provider == "deepl":
@@ -408,7 +264,7 @@ def do_trans(provider, app_id, app_key, text):
         service = GoogleTranslationService(app_key)
         translated_text = service.translate(text=text)
     elif provider == "yandex":
-        translated_text = yandex_trans(app_id, app_key, text)
+        translated_text = yt.yandex_trans(app_id, app_key, text)
     else:
         print("can not find provider: ")
         print(provider)
@@ -444,7 +300,7 @@ def do_send_prompt(translated_text):
 # parameter: provider, app_id, app_key
 # return:
 # trans_setting: a parsed json object as python dict with same structure as globel trans_setting object
-def save_trans_setting(provider, app_id, app_key):
+def save_trans_setting(provider, app_id, app_key, new_sourse_lang=None):
     print("Saving tranlation service setting...")
     # write data into globel trans_setting
     global trans_setting
@@ -453,12 +309,15 @@ def save_trans_setting(provider, app_id, app_key):
     if not provider:
         print("Translation provider can not be none")
         return
-    
+
     if provider not in trans_setting.keys():
         print("Translation provider is not in the list.")
         print("Your provider: " + provider)
         return
-    
+
+    if new_sourse_lang:
+        yt.save_yandex_conf(None, None, new_sourse_lang)
+
     # set value    
     trans_setting[provider]["app_id"] = app_id
     trans_setting[provider]["app_key"] = app_key
@@ -528,6 +387,9 @@ def on_ui_tabs():
     for key in trans_providers.keys():
         providers.append(key)
 
+    yt.read_yandex_conf()
+    yandex_lang_list = yt.iam_token_setting['sourceLanguageCode'].split(',')
+
     # get prompt textarea
     # UI structure
     # check modules/ui.py, search for txt2img_paste_fields
@@ -541,14 +403,11 @@ def on_ui_tabs():
     def set_provider(provider):
         app_id_visible =  trans_providers[provider]['has_id']
         if provider == "yandex":
-            app_id_label = "FOLDER_ID"
-            app_key_label = "OAUTH_TOKEN"
-            app_id_visible = True
+            s_lang_visible = True
         else:
-            app_id_label = "APP ID"
-            app_key_label = "APP KEY"
-        return [app_id.update(label=app_id_label, visible=app_id_visible, value=trans_setting[provider]["app_id"]), app_key.update(label=app_key_label, value=trans_setting[provider]["app_key"])]
+            s_lang_visible = False
 
+        return [app_id.update(visible=app_id_visible, value=trans_setting[provider]["app_id"]), app_key.update(value=trans_setting[provider]["app_key"]),s_lang.update(visible=s_lang_visible, value=yandex_lang_list[0])]
 
     with gr.Blocks(analytics_enabled=False) as prompt_translator:
         # ====ui====
@@ -589,9 +448,14 @@ def on_ui_tabs():
         provider = gr.Dropdown(choices=providers, value=provider_name, label="Provider", elem_id="pt_provider")
         app_id = gr.Textbox(label="APP ID", lines=1, value=trans_setting[provider_name]["app_id"], elem_id="pt_app_id")
         app_key = gr.Textbox(label="APP KEY", lines=1, value=trans_setting[provider_name]["app_key"], elem_id="pt_app_key")
+        s_lang = gr.Dropdown(choices=yandex_lang_list, visible=False, value=yandex_lang_list[0], label="Sourse language", elem_id="pt_lang")
         save_trans_setting_btn = gr.Button(value="Save Setting")
 
+        # yandex need sourse_lang and app_id as folder_id
+        if provider_name == "yandex":
+            s_lang.visible = True
         # deepl do not need appid
+
         app_id.visible = trans_providers[provider_name]['has_id']
 
         # ====events====
@@ -606,13 +470,17 @@ def on_ui_tabs():
         send_prompt_btn.click(do_send_prompt, inputs=translated_prompt, outputs=[txt2img_prompt, img2img_prompt])
         send_neg_prompt_btn.click(do_send_prompt, inputs=translated_neg_prompt, outputs=[txt2img_neg_prompt, img2img_neg_prompt])
 
+        if provider_name == 'yandex':
+            outputs = [app_id, app_key, s_lang]
+        else:
+            outputs = [app_id, app_key]
+
         # Translation Service Setting
-        provider.change(fn=set_provider, inputs=provider, outputs=[app_id, app_key])
-        save_trans_setting_btn.click(save_trans_setting, inputs=[provider, app_id, app_key])
+        print(f'provider = {provider}')
+        provider.change(fn=set_provider, inputs=provider, outputs=[app_id, app_key, s_lang])
+        save_trans_setting_btn.click(save_trans_setting, inputs=[provider, app_id, app_key, s_lang])
 
     # the third parameter is the element id on html, with a "tab_" as prefix
     return (prompt_translator , "Prompt Translator", "prompt_translator"),
 
 script_callbacks.on_ui_tabs(on_ui_tabs)
-
-
