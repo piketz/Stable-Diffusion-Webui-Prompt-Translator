@@ -32,6 +32,9 @@ import json
 import modules
 from modules import script_callbacks
 from scripts.services import GoogleTranslationService, yandex_translation as yt
+import torch
+from transformers import MarianMTModel, MarianTokenizer
+
 
 # from modules import images
 # from modules.processing import process_images, Processed
@@ -57,7 +60,26 @@ trans_providers = {
         "url": "https://translate.api.cloud.yandex.net/translate/v2/translate",
         "has_id": True
     },
+    "Helsinki-NLP": {
+        "url": "",
+        "has_id": False
+    },
 }
+trans_H_NLP_models = ['es', 'de', 'fr', 'ru', 'ROMANCE', 'id', 'mul', 'zh', 'it', 'ar', 'nl', 'pl', 'fi', 'sv', 'vi',
+                      'da', 'ja', 'ine', 'et', 'tr', 'roa', 'sla', 'bat', 'hi', 'ko', 'uk', 'hu', 'gmq', 'cs', 'ca',
+                      'tc-big-it', 'sk', 'bg', 'eo', 'eu', 'tl', 'af', 'ur', 'th', 'tc-big-fr', 'sq', 'lv',
+                      'tc-big-zle', 'mk', 'wa', 'az', 'ceb', 'cy', 'tc-big-he', 'mt', 'ga', 'grk', 'is', 'tc-big-el',
+                      'gl', 'tc-big-ar', 'bn', 'tc-big-fi', 'jap', 'tc-big-lt', 'mr', 'bi', 'gem', 'ml', 'sm', 'mg',
+                      'tc-big-cat_oci_spa', 'ka', 'ny', 'sn', 'pa', 'ng', 'aav', 'tc-big-tr', 'bcl', 'ht', 'hy', 'alv',
+                      'war', 'yo', 'tc-big-sh', 'bem', 'mh', 'swc', 'dra', 'st', 'om', 'ho', 'kl', 'xh', 'ha', 'ig',
+                      'tc-big-zls', 'fj', 'ilo', 'tc-big-ko', 'kg', 'ts', 'tc-big-et', 'ee', 'rw', 'tc-big-bg', 'lua',
+                      've', 'iso', 'itc', 'tc-big-gmq', 'ase', 'nso', 'loz', 'gil', 'ber', 'yap', 'chk', 'sem', 'trk',
+                      'zls', 'lg', 'sg', 'tc-big-lv', 'tn', 'tc-big-hu', 'lu', 'mkh', 'phi', 'run', 'pag', 'urj', 'lun',
+                      'tpi', 'cau', 'kj', 'kqn', 'ln', 'lus', 'crs', 'gv', 'kab', 'ti', 'gaa', 'gmw', 'hil', 'iir',
+                      'taw', 'umb', 'afa', 'cus', 'efi', 'lue', 'pis', 'ss', 'wal', 'tc-big-ces_slk', 'bzs', 'ccs',
+                      'fiu', 'luo', 'niu', 'rn', 'bnt', 'cel', 'guw', 'mfe', 'toi', 'zle', 'cpp', 'mos', 'nic', 'srn',
+                      'tiv', 'art', 'euq', 'kwn', 'pap', 'pon', 'pqe', 'rnd', 'wls', 'zlw', 'tc-big-cel', 'tc-big-zlw',
+                      'cpf', 'inc', 'nyk', 'sal', 'to', 'tum', 'tvl', 'kwy', 'tll', 'opus-tatoeba-fi']
 
 # user's translation service setting
 trans_setting = {
@@ -81,11 +103,60 @@ trans_setting = {
         "app_id": "",
         "app_key": ""
     },
+    "Helsinki-NLP": {
+        "is_default": False,
+        "app_id": "",
+        "app_key": "",
+        "language_model": ""
+    },
+
 }
 
 # user config file
 # use scripts.basedir() to get current extension's folder
 config_file_name = os.path.join(scripts.basedir(), "prompt_translator.cfg")
+
+
+# on cpu
+# def helsinki_trans(text):
+#
+#    translator = pipeline("translation", model="Helsinki-NLP/opus-mt-ru-en")
+#    print(f'translator(text) : {translator(text)}')
+#    return translator(text)[0]['translation_text']
+#global model_helsinki
+#global tokenizer_helsinki
+model_helsinki = None
+tokenizer_helsinki = None
+
+def helsinki_trans(text):
+    global model_helsinki
+    global tokenizer_helsinki
+    lang = trans_setting["Helsinki-NLP"]["language_model"]
+
+    if not lang:
+        return "Chose model lan in setting"
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if not model_helsinki:
+        model_name = f"Helsinki-NLP/opus-mt-{lang}-en"
+        print(f'Load model... {model_name}')
+        tokenizer_helsinki = MarianTokenizer.from_pretrained(model_name)
+        model_helsinki = MarianMTModel.from_pretrained(model_name)
+        model_helsinki.to(device)
+    elif model_helsinki.device.type == "cpu":
+            model_helsinki.to(device)
+
+    inputs = tokenizer_helsinki(text, return_tensors="pt").to(device)
+    outputs = model_helsinki.generate(**inputs)
+    translated_text = tokenizer_helsinki.decode(outputs[0], skip_special_tokens=True)
+
+    del inputs, outputs
+    model_helsinki = model_helsinki.cpu()
+    torch.cuda.empty_cache()
+
+    return translated_text
+
 
 # deepl translator
 # refer: https://www.deepl.com/docs-api/translate-text/
@@ -265,6 +336,8 @@ def do_trans(provider, app_id, app_key, text):
         translated_text = service.translate(text=text)
     elif provider == "yandex":
         translated_text = yt.yandex_trans(app_id, app_key, text)
+    elif provider == "Helsinki-NLP":
+        translated_text = helsinki_trans(text)
     else:
         print("can not find provider: ")
         print(provider)
@@ -316,7 +389,10 @@ def save_trans_setting(provider, app_id, app_key, new_sourse_lang=None):
         return
 
     if new_sourse_lang:
-        yt.save_yandex_conf(None, None, new_sourse_lang)
+        if provider == 'yandex':
+            yt.save_yandex_conf(None, None, new_sourse_lang)
+        if provider == 'Helsinki-NLP':
+            trans_setting[provider]["language_model"] = new_sourse_lang
 
     # set value    
     trans_setting[provider]["app_id"] = app_id
@@ -401,19 +477,21 @@ def on_ui_tabs():
 
     # ====Event's function====
     def set_provider(provider):
-        app_id_visible =  trans_providers[provider]['has_id']
+        app_id_visible = trans_providers[provider]['has_id']
         if provider == "yandex":
-            s_lang_visible = True
-            app_id_label = "FOLDER_ID"
-            app_key_label = "OAUTH_TOKEN"
-            app_id_visible = True
+            return [app_id.update(visible=app_id_visible, label="FOLDER_ID", value=trans_setting[provider]["app_id"]),
+                    app_key.update(label="OAUTH_TOKEN", value=trans_setting[provider]["app_key"]),
+                    s_lang.update(visible=True, value=yandex_lang_list[0])]
+        elif provider == "Helsinki-NLP":
+            return [app_id.update(visible=False,  value=trans_setting[provider]["app_id"]),
+                    app_key.update(visible=False, value=trans_setting[provider]["app_key"]),
+                    s_lang.update(visible=True, choices=trans_H_NLP_models, value=trans_setting[provider]["language_model"])]
         else:
-            s_lang_visible = False
-            app_id_label = "APP ID"
-            app_key_label = "APP KEY"
-        app_id_visible =  trans_providers[provider]['has_id']
+            return [app_id.update(visible=app_id_visible, label="APP ID", value=trans_setting[provider]["app_id"]),
+                    app_key.update(label="APP KEY", value=trans_setting[provider]["app_key"]),
+                    s_lang.update(visible=False, value=yandex_lang_list[0])]
 
-        return [app_id.update(visible=app_id_visible, label=app_id_label, value=trans_setting[provider]["app_id"]), app_key.update(label=app_key_label, value=trans_setting[provider]["app_key"]),s_lang.update(visible=s_lang_visible, value=yandex_lang_list[0])]
+
 
     with gr.Blocks(analytics_enabled=False) as prompt_translator:
         # ====ui====
@@ -458,7 +536,7 @@ def on_ui_tabs():
         save_trans_setting_btn = gr.Button(value="Save Setting")
 
         # yandex need sourse_lang and app_id as folder_id
-        if provider_name == "yandex":
+        if provider_name == "yandex" or provider_name == "Helsinki-NLP":
             s_lang.visible = True
         # deepl do not need appid
 
